@@ -2,19 +2,17 @@ module MyLib  where
 
 import Text.ParserCombinators.Parsec hiding (spaces)
 import System.Environment
+import Data.Functor
 
 import Lisp
+import Numeric
+import Numeric (readOct, readHex)
 
 symbol :: Parser Char
 symbol = oneOf "!$%&|*+-/:<=?>@^_~#"
 
 spaces :: Parser ()
 spaces = skipMany1 space
-
-readExpr :: String -> String
-readExpr input = case parse parseExpr "bebba" input of
-  Left err  -> "No match: " ++ show err
-  Right val -> "Found value : " ++ show val
 
 
 parseQuote :: Parser Char
@@ -36,31 +34,53 @@ parseAtom = do first <- letter <|> symbol
                  otherwise -> Atom atom
 
 
-parseRadixNotHex :: Parser Char
-parseRadixNotHex = option 'd' (char '#' >> oneOf "dbo")
+parseRadix :: Parser Char
+parseRadix = option 'd' (char '#' >> oneOf "dbox")
 
-parseNumberWithRadixNotHex :: Parser LispVal
-parseNumberWithRadixNotHex = do radix <- parseRadixNotHex
-                                rest  <- many1 digit
-                                return $ case radix of 
-                                      'd' -> (Number . Decimal . read) rest
-                                      'b' -> (Number . Binary . read) rest
-                                      'o' -> (Number . Octal . read) rest
-                                
 hexVals :: Parser Char
 hexVals = oneOf "abcdefABCDEF" <|> digit
 
-parseHex :: Parser LispVal
-parseHex = do _ <- char '#'
-              _ <- char 'x'
-              vals <- many1 hexVals
-              return $ (Number . Hexa) vals
+extractNumber :: ReadS a -> String -> a
+extractNumber f = fst . head . f
 
-parseNumber :: Parser LispVal              
-parseNumber = try parseHex <|> parseNumberWithRadixNotHex
+parseNumber :: Parser LispVal
+parseNumber = do redix <- parseRadix
+                 Number <$> case redix of
+                   'x' -> extractNumber readHex <$> many1 hexVals
+                   'd' -> extractNumber readDec <$> many1 digit
+                   'b' ->  extractNumber readBin <$> many1 digit
+                   'o' -> extractNumber readOct <$> many1 digit
+
+parseList :: Parser LispVal
+parseList = List <$> sepBy parseExpr spaces
+
+parseDottedList :: Parser LispVal
+parseDottedList = do
+  head <- endBy parseExpr spaces
+  tail <- char '.' >> spaces >> parseExpr
+  return $ DottedList head tail
+
+parseQuoted :: Parser LispVal
+parseQuoted = do
+  char '\''
+  x <- parseExpr
+  return $ List [Atom "quote", x]
+
 
 parseExpr :: Parser LispVal
-parseExpr = parseString <|> parseNumber <|> parseAtom 
+parseExpr = parseAtom
+        <|> parseString
+        <|> parseNumber
+        <|> parseQuoted
+        <|> do char '('
+               x <- try parseList <|> parseDottedList
+               char ')'
+               return x
+
+readExpr :: String -> String
+readExpr input = case parse parseNumber "bebba" input of
+  Left err  -> "No match: " ++ show err
+  Right val -> "Found value : " ++ show val
 
 
 someFunc :: IO ()
