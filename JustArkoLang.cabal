@@ -17,12 +17,14 @@ common warnings
 
 library
     import:           warnings
-    exposed-modules:  MyLib,
-                      Lisp
+    exposed-modules:  Parser,
+                      Lisp,
+                      Eval,
+                      Error
     -- other-modules:
     -- other-extensions:
     build-depends:    base ^>=4.17.2.1,
-                      mtl >= 2.2.2,
+                      mtl,
                       parsec
     hs-source-dirs:   src
     default-language: GHC2021
