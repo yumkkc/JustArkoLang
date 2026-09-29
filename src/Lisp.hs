@@ -1,7 +1,8 @@
 module Lisp where
 
 import Text.ParserCombinators.Parsec hiding (spaces)
-import System.Environment (executablePath)
+
+import Data.IORef
 
 data LispVal = Atom String
              | List [LispVal]
@@ -10,7 +11,7 @@ data LispVal = Atom String
              | Character Char
              | String String
              | Bool Bool
---        deriving Show
+
 
 
 showVal :: LispVal -> String
@@ -49,3 +50,8 @@ showError (TypeMismatch expected found) = "Invalid type: expected " ++ expected 
 showError (Parser parseErr) = "Parse error at " ++ show parseErr
 
 instance Show LispError where show = showError
+
+type Env = IORef [(String, IORef LispVal)]
+
+nullEnv :: IO Env
+nullEnv = newIORef []

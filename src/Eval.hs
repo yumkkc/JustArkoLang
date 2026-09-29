@@ -2,11 +2,12 @@
 
 module Eval where
 
-import Lisp
-import Control.Monad.Except
-import Data.Functor
-import Error
-import Lisp (LispError(TypeMismatch), LispVal (DottedList))
+import           Control.Monad.Except
+import           Data.Functor
+import           Data.IORef
+import           Data.Maybe
+import           Error
+import           Lisp
 
 eval :: LispVal -> ThrowsError LispVal
 eval val@(String _)             = return val
@@ -35,7 +36,7 @@ unpackStr :: LispVal -> ThrowsError String
 unpackStr (String s) = return s
 unpackStr (Number s) = return $ show s
 unpackStr (Bool b)   = return $ show b
-unpackStr notString     = throwError $ TypeMismatch "string" notString
+unpackStr notString  = throwError $ TypeMismatch "string" notString
 
 unpackBool :: LispVal -> ThrowsError Bool
 unpackBool (Bool b) = return b
@@ -43,9 +44,9 @@ unpackBool notBool  = throwError $ TypeMismatch "boolean" notBool
 
 -- main functions
 numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
-numericBinop op [] = throwError $ NumArgs 2 []
+numericBinop op []            = throwError $ NumArgs 2 []
 numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
-numericBinop op params = mapM unpackNum params <&> Number . foldl1 op
+numericBinop op params        = mapM unpackNum params <&> Number . foldl1 op
 
 checkSymbol :: [LispVal] -> ThrowsError LispVal
 checkSymbol [Atom _] = return $ Bool True
@@ -71,24 +72,24 @@ evalCond cond tr fl = do condval <- eval cond
                            _          -> eval tr
 
 car :: [LispVal] -> ThrowsError LispVal
-car [List (x : xs)] = return x
+car [List (x : xs)]         = return x
 car [DottedList (x : xs) _] = return x
 car [badArg]                = throwError $ TypeMismatch "pair" badArg
 car badArgList              = throwError $ NumArgs 1 badArgList
 
 cdr :: [LispVal] -> ThrowsError LispVal
-cdr [List (x : xs)] = return $ List xs
-cdr [DottedList [_] x] = return x
+cdr [List (x : xs)]         = return $ List xs
+cdr [DottedList [_] x]      = return x
 cdr [DottedList (_ : xs) x] = return $ DottedList xs x
-cdr [badArg] = throwError $ TypeMismatch "pair" badArg
+cdr [badArg]                = throwError $ TypeMismatch "pair" badArg
 cdr badArgList              = throwError $ NumArgs 1 badArgList
 
 cons :: [LispVal] -> ThrowsError LispVal
-cons [x1 , List []] = return $ List [x1]
-cons [x, List xs]   = return $ List $ x : xs
+cons [x1 , List []]           = return $ List [x1]
+cons [x, List xs]             = return $ List $ x : xs
 cons [x, DottedList xs xlast] = return $ DottedList (x : xs) xlast
-cons [x1, x2] = return $ DottedList [x1] x2
-cons badArgList = throwError $ NumArgs 2 badArgList
+cons [x1, x2]                 = return $ DottedList [x1] x2
+cons badArgList               = throwError $ NumArgs 2 badArgList
 
 eqv :: [LispVal] -> ThrowsError LispVal
 eqv [Bool arg1, Bool arg2]             = return $ Bool $ arg1 == arg2
@@ -150,3 +151,37 @@ primitives = [("+", numericBinop (+)),
               ("eq?", eqv),
               ("eqv?", eqv),
               ("equal?", equal)]
+
+
+-- For Environment
+isBound :: Env -> String -> IO Bool
+isBound env var = isJust . lookup var <$> readIORef env
+
+getVar :: Env -> String -> IOThrowsError LispVal
+getVar envRef var = do env <- liftIO $ readIORef envRef -- env will have IOThrowsError Env
+                       case lookup var env of
+                          Just val -> liftIO $ readIORef val
+                          Nothing  -> throwError $ UnboundVar "Variable not found " var
+
+
+-- for setVar we gotta check if its already bound
+setVar :: Env -> String -> LispVal -> IOThrowsError LispVal
+setVar envRef var value = do env <- liftIO $ readIORef envRef
+                             case lookup var env of
+                                Just bounded  -> liftIO $ writeIORef bounded value
+                                Nothing       -> throwError $ UnboundVar "Setting up unbounded variable " var
+                             return value
+
+
+
+defineVar :: Env -> String -> LispVal -> IOThrowsError LispVal
+defineVar envRef var value = do 
+   isBounded <- liftIO $ isBound envRef var -- env has Bool
+   if isBounded
+   then setVar envRef var value -- wthis return IOThrowsError LispVal 
+   else do
+      env <- liftIO $ readIORef envRef       -- env have base [(String, IORef)]
+      newVal <- liftIO $ newIORef value      -- newVal has IORef LispVal
+      liftIO $ writeIORef envRef $ (var, newVal) : env
+      return value       -- env is done
+      
