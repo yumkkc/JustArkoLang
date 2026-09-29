@@ -79,7 +79,7 @@ parseExpr = try parseNumber
                char ')'
                return x
 
-readExpr :: String -> ThrowsError LispVal
+readExpr :: String -> IOThrowsError LispVal
 readExpr input = case parse parseExpr "arko" input of
   Left err  -> throwError $ Parser err
   Right val -> return val
