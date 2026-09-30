@@ -15,25 +15,35 @@ eval _ val@(Number _)             = return val
 eval _ val@(Bool _)               = return val
 eval env (Atom id)                = getVar env id
 eval _ (List [Atom "quote", val]) = return val
-eval env (List [Atom "if", cond, tr, fl]) = evalCond env cond tr fl
-eval env (List [Atom "set!", Atom var, form]) = eval env form >>= setVar env var
+eval env (List [Atom "if", cond, tr, fl])       = evalCond env cond tr fl
+eval env (List [Atom "set!", Atom var, form])   = eval env form >>= setVar env var
 eval env (List [Atom "define", Atom var, form]) = eval env form >>= defineVar env var
 eval env (List (Atom func : args))  = mapM (eval env) args >>= apply func
-eval _ badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
+eval _ badForm = throwError $ BadSpecialForm "Unrecognized Special Form " badForm
 
-apply :: String -> [LispVal] -> IOThrowsError LispVal
-apply func arg = case lookup func primitives of
-                      Nothing -> throwError $ NotFunction "Unrecognized primitive function args" func
+apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
+apply (PrimitiveFunc func) arg = case lookup func primitives of
+                      Nothing -> throwError $ NotFunction "Unrecognized Primitive function args " func
                       Just f  -> f arg
+apply (Func params varargs body closure) args 
+   | len params \= len args && isNothing varags = throwError $ NumArgs (len params) args
+   | otherwise   =  last <$> mapM (eval newEnv) body
+      where 
+         varBind = case varargs of
+            Nothing     -> []
+            Just varVar -> (varVar, List $ drop (len params)  args)
+         fullBindings = zip params args ++ varVar
+         newEnv       = bindVars closure fullBindings
+                                              
 -- unpacking
 unpackNum :: LispVal -> IOThrowsError Integer
 unpackNum (Number n) = return n
 unpackNum (String n) = let parsed = reads n in
                          if null parsed
-                            then throwError $ TypeMismatch "number" $ String n
-                            else return $ fst $ parsed !! 0
+                            then throwError $ TypeMismatch "number " $ String n
+                            else return $ fst $ head parsed
 unpackNum (List [n])  = unpackNum n
-unpackNum notNum           = throwError $ TypeMismatch "number" notNum
+unpackNum notNum           = throwError $ TypeMismatch "number " notNum
 
 unpackStr :: LispVal -> IOThrowsError String
 unpackStr (String s) = return s

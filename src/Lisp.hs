@@ -3,6 +3,7 @@ module Lisp where
 import Text.ParserCombinators.Parsec hiding (spaces)
 
 import Data.IORef
+import Error (IOThrowsError)
 
 data LispVal = Atom String
              | List [LispVal]
@@ -11,7 +12,11 @@ data LispVal = Atom String
              | Character Char
              | String String
              | Bool Bool
-
+             | PrimitiveFunc ([LispVal] -> IOThrowsError)
+             | Func { params :: [String]
+                     , vararg :: Maybe String
+                     , body :: [LispVal]
+                     , closure :: Env }
 
 
 showVal :: LispVal -> String
@@ -25,6 +30,12 @@ showVal (DottedList listContents lastVal) = "(" ++
                                             unwordsList listContents ++
                                             " . " ++ showVal lastVal
                                             ++ ")"
+showVal(PrimitiveFunc _ ) = "<primitive>"                                             
+showVal (Func {params = args, vararg = varargs, body = body, closure = env}) =
+   "(lambda (" ++ unwords (map show args) ++
+      (case varargs of
+         Nothing -> ""
+         Just arg -> " . " ++ arg) ++ ") ...)"
 
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map showVal
