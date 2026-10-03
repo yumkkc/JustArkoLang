@@ -21,7 +21,7 @@ parseQuote = char '\\' >> char '"'
 
 parseString :: Parser LispVal
 parseString = do char '"'
-                 x <- many $ (try parseQuote <|> noneOf "\"")
+                 x <- many (try parseQuote <|> noneOf "\"")
                  char '"'
                  return $ String x
 
@@ -72,7 +72,6 @@ parseExpr :: Parser LispVal
 parseExpr = try parseNumber
         <|> parseAtom
         <|> parseString
-
         <|> parseQuoted
         <|> do char '('
                x <- try parseList <|> parseDottedList
@@ -83,3 +82,8 @@ readExpr :: String -> IOThrowsError LispVal
 readExpr input = case parse parseExpr "arko" input of
   Left err  -> throwError $ Parser err
   Right val -> return val
+
+
+-- JUST FOR DEBUG
+runParserDirect :: IOThrowsError LispVal -> IO ()
+runParserDirect expr = runExceptT expr >>= print

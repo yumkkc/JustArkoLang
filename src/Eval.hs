@@ -1,4 +1,5 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Eval where
 
@@ -17,23 +18,29 @@ eval env (Atom id)                = getVar env id
 eval _ (List [Atom "quote", val]) = return val
 eval env (List [Atom "if", cond, tr, fl])       = evalCond env cond tr fl
 eval env (List [Atom "set!", Atom var, form])   = eval env form >>= setVar env var
+eval env (List (Atom "define" : List (Atom funName : params) : body))
+  = defineFun funName params Nothing body env
 eval env (List [Atom "define", Atom var, form]) = eval env form >>= defineVar env var
-eval env (List (Atom func : args))  = mapM (eval env) args >>= apply func
+eval env (List (Atom funcName : args))  = do func <- getVar env funcName --- inside IOThrowsError Monad
+                                             argsEvaled <- mapM (eval env) args
+                                             apply func argsEvaled
+
+
 eval _ badForm = throwError $ BadSpecialForm "Unrecognized Special Form " badForm
 
+
+-- Applying of the functions
 apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
-apply (PrimitiveFunc func) arg = case lookup func primitives of
-                      Nothing -> throwError $ NotFunction "Unrecognized Primitive function args " func
-                      Just f  -> f arg
-apply (Func params varargs body closure) args 
-   | len params \= len args && isNothing varags = throwError $ NumArgs (len params) args
-   | otherwise   =  last <$> mapM (eval newEnv) body
+apply (PrimitiveFunc func) arg =  func arg
+apply (Func params varargs body closure) args
+   | length params /= length args && isNothing varargs = throwError $ NumArgs (length params) args
+   | otherwise   = do env' <- liftIO $ bindVars closure fullBindings
+                      last <$> mapM (eval env') body
       where 
          varBind = case varargs of
             Nothing     -> []
-            Just varVar -> (varVar, List $ drop (len params)  args)
-         fullBindings = zip params args ++ varVar
-         newEnv       = bindVars closure fullBindings
+            Just varVar -> [(varVar, List $ drop (length params)  args)]
+         fullBindings = zip params args ++ varBind
                                               
 -- unpacking
 unpackNum :: LispVal -> IOThrowsError Integer
@@ -210,3 +217,24 @@ bindVars envRef bindings = do env <- readIORef envRef -- env :: [(String, IORef 
                         where
                           -- newVar ::  (String, LispVal) -> IO (String, IORef LispVal)
                           newVar (var, value) = (var, ) <$> newIORef value
+
+
+-- build an new Environment with the primitives
+-- Env :: IORef [(String, IORef LispVal)]
+-- nullEnv :: IO ( IORef [(String, IORef LispVal)] )
+primEnv :: IO Env
+primEnv = do env <- nullEnv
+             prim' <- mapM primhelper primitives
+             writeIORef env prim'
+             return env
+        where
+          primhelper (var, val) = newIORef (PrimitiveFunc val) >>= return . (var, )
+
+
+defineFun :: String -> [LispVal] -> Maybe String -> [LispVal] -> Env -> IOThrowsError LispVal
+defineFun name paramval varparam body env = defineVar env name fundefn
+  where
+    params = map (\case
+                     Atom s -> s)
+             paramval
+    fundefn =  Func params varparam body env
