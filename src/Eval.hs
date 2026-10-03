@@ -231,10 +231,13 @@ primEnv = do env <- nullEnv
           primhelper (var, val) = newIORef (PrimitiveFunc val) >>= return . (var, )
 
 
+checkAtom :: LispVal -> IOThrowsError String
+checkAtom (Atom s) = return s
+checkAtom v      = throwError $ TypeMismatch "param must be identifier" v
+
+
 defineFun :: String -> [LispVal] -> Maybe String -> [LispVal] -> Env -> IOThrowsError LispVal
-defineFun name paramval varparam body env = defineVar env name fundefn
-  where
-    params = map (\case
-                     Atom s -> s)
-             paramval
-    fundefn =  Func params varparam body env
+defineFun name paramval varparam body env = do
+  params <- mapM checkAtom paramval
+  let fundefn = Func params varparam body env
+  defineVar env name fundefn
