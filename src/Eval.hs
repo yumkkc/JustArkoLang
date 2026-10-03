@@ -9,6 +9,7 @@ import           Data.IORef
 import           Data.Maybe
 import           Error
 import           Lisp
+import Lisp (LispVal(DottedList))
 
 eval :: Env -> LispVal -> IOThrowsError LispVal
 eval _ val@(String _)             = return val
@@ -18,14 +19,21 @@ eval env (Atom id)                = getVar env id
 eval _ (List [Atom "quote", val]) = return val
 eval env (List [Atom "if", cond, tr, fl])       = evalCond env cond tr fl
 eval env (List [Atom "set!", Atom var, form])   = eval env form >>= setVar env var
+-- func definitions
 eval env (List (Atom "define" : List (Atom funName : params) : body))
-  = defineFun funName params Nothing body env
+  = defineFun params Nothing body env >>= defineVar env funName
+eval env (List (Atom "define" : DottedList (Atom funName : params) varps : body))
+  = defineFun params (Just varps) body env >>= defineVar env funName
 eval env (List [Atom "define", Atom var, form]) = eval env form >>= defineVar env var
+eval env (List (Atom "lambda": List params : body)) = defineFun params Nothing body env
+eval env (List (Atom "lambda" : (DottedList params other) : body)) = defineFun params (Just other) body env
+eval env (List (Atom "lambda" : param : body)) = defineFun [] (Just param) body env
 eval env (List (Atom funcName : args))  = do func <- getVar env funcName --- inside IOThrowsError Monad
                                              argsEvaled <- mapM (eval env) args
                                              apply func argsEvaled
-
-
+eval env (List (x : xs)) = do evaled <- eval env x
+                              argEvaled <- mapM (eval env) xs
+                              apply evaled argEvaled
 eval _ badForm = throwError $ BadSpecialForm "Unrecognized Special Form " badForm
 
 
@@ -236,8 +244,11 @@ checkAtom (Atom s) = return s
 checkAtom v      = throwError $ TypeMismatch "param must be identifier" v
 
 
-defineFun :: String -> [LispVal] -> Maybe String -> [LispVal] -> Env -> IOThrowsError LispVal
-defineFun name paramval varparam body env = do
+defineFun :: [LispVal] -> Maybe LispVal -> [LispVal] -> Env -> IOThrowsError LispVal
+defineFun paramval varparam body env = do
   params <- mapM checkAtom paramval
-  let fundefn = Func params varparam body env
-  defineVar env name fundefn
+  varval <- case varparam of
+    Nothing   -> return Nothing
+    Just varp -> do varp' <- checkAtom varp
+                    return $ Just varp'
+  return $ Func params varval body env

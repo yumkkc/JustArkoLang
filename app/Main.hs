@@ -29,8 +29,8 @@ until_ pred prompt action = do
 
 runOne :: String -> IO ()
 runOne expr = primEnv >>= flip evalAndPrint expr
-
 runRepl :: IO ()
+
 runRepl = primEnv >>= until_ (== "quit") (readPrompt ">> ") . evalAndPrint
 
 main :: IO ()
@@ -40,6 +40,4 @@ main = do
     0 -> runRepl
     1 -> runOne $ args !! 0
     _ -> putStrLn "Program takes only 0 or 1 args"
-
-main2 :: IO ()
 main2 = getLine >>= runParserDirect . readExpr
