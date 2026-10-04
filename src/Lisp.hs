@@ -22,11 +22,11 @@ data LispVal = Atom String
 
 showVal :: LispVal -> String
 showVal (String contents) = "\"" ++ contents ++ "\""
-showVal (Atom name)       = "atom: " ++ name
+showVal (Atom name)       = name
 showVal (Number contents) = show contents
 showVal (Bool True)       = "#t"
 showVal (Bool False)      = "#f"
-showVal (List contents)   = "List (" ++ unwordsList contents ++ ")"
+showVal (List contents)   = "(" ++ unwordsList contents ++ ")"
 showVal (DottedList listContents lastVal) = "(" ++
                                             unwordsList listContents ++
                                             " . " ++ showVal lastVal
