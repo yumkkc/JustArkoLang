@@ -27,17 +27,18 @@ until_ pred prompt action = do
      then return ()
      else action result >> until_ pred prompt action
 
-runOne :: String -> IO ()
-runOne expr = primEnv >>= flip evalAndPrint expr
-runRepl :: IO ()
+runOne :: [String] -> IO ()
+runOne args = do
+  env <- primEnv >>= flip bindVars [("args", List $ map String $ drop 1 args)]
+  let expr = List [Atom "load", String (head args)]
+  runIOThrows (show <$> eval env expr) >>= hPutStrLn stderr
 
+runRepl :: IO ()
 runRepl = primEnv >>= until_ (== "quit") (readPrompt ">> ") . evalAndPrint
 
 main :: IO ()
 main = do
   args <- getArgs
-  case length args of
-    0 -> runRepl
-    1 -> runOne $ args !! 0
-    _ -> putStrLn "Program takes only 0 or 1 args"
+  if null args then runRepl else runOne $ args
+
 main2 = getLine >>= runParserDirect . readExpr

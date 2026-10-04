@@ -78,10 +78,13 @@ parseExpr = try parseNumber
                char ')'
                return x
 
-readExpr :: String -> IOThrowsError LispVal
-readExpr input = case parse parseExpr "arko" input of
-  Left err  -> throwError $ Parser err
-  Right val -> return val
+readOrThrow :: Parser a -> String -> IOThrowsError a
+readOrThrow parser input = case parse parser "arko" input of
+                             Left err  -> throwError $ Parser err
+                             Right val -> return val
+
+readExpr = readOrThrow parseExpr
+readExprList = readOrThrow (endBy parseExpr spaces)
 
 
 -- JUST FOR DEBUG

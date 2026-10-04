@@ -3,6 +3,7 @@ module Lisp where
 import Text.ParserCombinators.Parsec hiding (spaces)
 import Data.IORef
 import Control.Monad.Except
+import System.IO
 
 data LispVal = Atom String
              | List [LispVal]
@@ -16,7 +17,7 @@ data LispVal = Atom String
                      , vararg :: Maybe String
                      , body :: [LispVal]
                      , closure :: Env }
-
+             | Port Handle
 
 
 showVal :: LispVal -> String
@@ -30,7 +31,8 @@ showVal (DottedList listContents lastVal) = "(" ++
                                             unwordsList listContents ++
                                             " . " ++ showVal lastVal
                                             ++ ")"
-showVal(PrimitiveFunc _ ) = "<primitive>"
+showVal (PrimitiveFunc _ )  = "<primitive>"
+showVal (Port _)            = "<IO Port>"
 showVal (Func {params = args, vararg = varargs, body = body, closure = env}) =
    "(lambda (" ++ unwords (map show args) ++
       (case varargs of

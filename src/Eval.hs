@@ -9,7 +9,8 @@ import           Data.IORef
 import           Data.Maybe
 import           Error
 import           Lisp
-import Lisp (LispVal(DottedList))
+import System.IO
+import Parser
 
 eval :: Env -> LispVal -> IOThrowsError LispVal
 eval _ val@(String _)             = return val
@@ -19,6 +20,7 @@ eval env (Atom id)                = getVar env id
 eval _ (List [Atom "quote", val]) = return val
 eval env (List [Atom "if", cond, tr, fl])       = evalCond env cond tr fl
 eval env (List [Atom "set!", Atom var, form])   = eval env form >>= setVar env var
+eval env (List [Atom "load", String filename])  = load filename >>= (\x -> last <$> mapM (eval env) x)
 -- func definitions
 eval env (List (Atom "define" : List (Atom funName : params) : body))
   = defineFun params Nothing body env >>= defineVar env funName
@@ -154,37 +156,6 @@ equal [arg1, arg2] = do
   return $ Bool (primitiveEquals || let (Bool x) = eqvEquals in x)
 equal badArgList    = throwError $ NumArgs 2 badArgList
 
--- function primitives
-primitives :: [(String, [LispVal] -> IOThrowsError LispVal)]
-primitives = [("+", numericBinop (+)),
-              ("-", numericBinop(-)),
-              ("*", numericBinop(*)),
-              ("/", numericBinop div),
-              ("mod", numericBinop mod),
-              ("quotient", numericBinop quot),
-              ("remainder", numericBinop rem),
-              ("symbol?", checkSymbol),
-              ("=", numBoolBinop (==)),
-              ("<", numBoolBinop (<)),
-              (">", numBoolBinop (>)),
-              ("/=", numBoolBinop (/=)),
-              (">=", numBoolBinop (>=)),
-              ("<=", numBoolBinop (<=)),
-              ("&&", boolBoolBinop (&&)),
-              ("||", boolBoolBinop (||)),
-              ("string=?", strBoolBinop (==)),
-              ("string<?", strBoolBinop (<)),
-              ("string>?", strBoolBinop (>)),
-              ("string<=?", strBoolBinop (<=)),
-              ("string>=?", strBoolBinop (>=)),
-              ("car", car),
-              ("cdr", cdr),
-              ("cons", cons),
-              ("eq?", eqv),
-              ("eqv?", eqv),
-              ("equal?", equal)]
-
-
 -- For Environment
 isBound :: Env -> String -> IO Bool
 isBound env var = isJust . lookup var <$> readIORef env
@@ -252,3 +223,71 @@ defineFun paramval varparam body env = do
     Just varp -> do varp' <- checkAtom varp
                     return $ Just varp'
   return $ Func params varval body env
+
+-- for IO
+applyProc :: [LispVal] -> IOThrowsError LispVal
+applyProc [func, List args] = apply func args
+applyProc (func : args)     = apply func args
+
+makePort :: IOMode -> [LispVal] -> IOThrowsError LispVal
+makePort mode [String filename] = Port <$> liftIO (openFile filename mode)
+
+closePort :: [LispVal] -> IOThrowsError LispVal
+closePort [Port port] = liftIO $ hClose port >> return (Bool True)
+closePort   _         = return $ Bool False
+
+readProc :: [LispVal] -> IOThrowsError LispVal
+readProc []  = readProc [Port stdin]
+readProc [Port port] = liftIO (hGetLine port) >>= readExpr
+
+writeProc :: [LispVal] -> IOThrowsError LispVal
+writeProc [obj] = writeProc [obj, Port stdout]
+writeProc [obj, Port port] = liftIO $ hPrint port obj >> return (Bool True)
+
+readContents :: [LispVal] -> IOThrowsError LispVal
+readContents [String filename] = String <$> liftIO (readFile filename)
+
+load :: String -> IOThrowsError [LispVal]
+load filename = liftIO (readFile filename) >>= readExprList
+
+readAll :: [LispVal] -> IOThrowsError LispVal
+readAll [String filename] = List <$> load filename
+
+-- function primitives
+primitives :: [(String, [LispVal] -> IOThrowsError LispVal)]
+primitives = [("+", numericBinop (+)),
+              ("-", numericBinop(-)),
+              ("*", numericBinop(*)),
+              ("/", numericBinop div),
+              ("mod", numericBinop mod),
+              ("quotient", numericBinop quot),
+              ("remainder", numericBinop rem),
+              ("symbol?", checkSymbol),
+              ("=", numBoolBinop (==)),
+              ("<", numBoolBinop (<)),
+              (">", numBoolBinop (>)),
+              ("/=", numBoolBinop (/=)),
+              (">=", numBoolBinop (>=)),
+              ("<=", numBoolBinop (<=)),
+              ("&&", boolBoolBinop (&&)),
+              ("||", boolBoolBinop (||)),
+              ("string=?", strBoolBinop (==)),
+              ("string<?", strBoolBinop (<)),
+              ("string>?", strBoolBinop (>)),
+              ("string<=?", strBoolBinop (<=)),
+              ("string>=?", strBoolBinop (>=)),
+              ("car", car),
+              ("cdr", cdr),
+              ("cons", cons),
+              ("eq?", eqv),
+              ("eqv?", eqv),
+              ("equal?", equal),
+              ("apply", applyProc),
+              ("open-input-file", makePort ReadMode),
+              ("open-output-file", makePort WriteMode),
+              ("close-input-port", closePort),
+              ("close-output-port", closePort),
+              ("read", readProc),
+              ("write", writeProc),
+              ("read-contents", readContents),
+              ("read-all", readAll)]
